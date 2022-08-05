@@ -6,6 +6,9 @@ export {
   parsePuzzleDescription,
   PuzzleGeometry,
 } from "./PuzzleGeometry";
+export {
+  makeJumblePrism,
+} from "./jumbleprism";
 export type {
   StickerDat,
   StickerDatAxis,
