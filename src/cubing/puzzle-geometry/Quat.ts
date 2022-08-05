@@ -251,15 +251,14 @@ export class Quat {
    * is no intersection.
    * @param face The face to cut.
    */
-  public cutface(face: Quat[]): Quat[][] | null {
+   public cutface(face: Quat[]): Quat[][] | null {
     const d = this.a;
     let seen = 0;
-    let r = null;
     for (let i = 0; i < face.length; i++) {
       seen |= 1 << (this.side(face[i].dot(this) - d) + 1);
     }
     if ((seen & 5) === 5) {
-      r = [];
+      const r = [];
       // saw both sides
       const inout = face.map((_: Quat) => this.side(_.dot(this) - d));
       for (let s = -1; s <= 1; s += 2) {
@@ -279,7 +278,53 @@ export class Quat {
         }
         r.push(nface);
       }
+      return r;
     }
+    return null;
+  }
+
+  /**
+   * Cuts a face by this plane, returns the two new faces (either of
+   * which might be the "empty" face), and a set of points on the cut.
+   * @param face The face to cut.
+   */
+   public splitface(face: Quat[]): Quat[][] {
+    const d = this.a;
+    const rp: Quat[] = [];
+    for (let i = 0; i < face.length; i++) {
+      this.side(face[i].dot(this) - d) + 1;
+    }
+    const r = [];
+    // saw both sides
+    const inout = face.map((_: Quat) => this.side(_.dot(this) - d));
+    for (let s = -1; s <= 1; s += 2) {
+      const nface = [];
+      for (let k = 0; k < face.length; k++) {
+        if (inout[k] === s || inout[k] === 0) {
+          nface.push(face[k]);
+          if (s == 1 && inout[k] === 0) {
+            rp.push(face[k]);
+          }
+        }
+        const kk = (k + 1) % face.length;
+        if (inout[k] + inout[kk] === 0 && inout[k] !== 0) {
+          const vk = face[k].dot(this) - d;
+          const vkk = face[kk].dot(this) - d;
+          const r = vk / (vk - vkk);
+          const pt = face[k].smul(1 - r).sum(face[kk].smul(r));
+          nface.push(pt);
+          if (s == 1) {
+            rp.push(pt);
+          }
+        }
+      }
+      if (nface.length > 2) {
+        r.push(nface);
+      } else {
+        r.push([]); // empty face
+      }
+    }
+    r.push(rp);
     return r;
   }
 
