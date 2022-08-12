@@ -1,98 +1,15 @@
 import { centermassface, Quat } from "./Quat";
 const eps = 1e-9;
-class Face {
-  private coords: number[];
-  public length: number;
-  constructor(q: Quat[]) {
-    this.coords = new Array(q.length * 3);
-    for (let i = 0; i < q.length; i++) {
-      this.coords[3 * i] = q[i].b;
-      this.coords[3 * i + 1] = q[i].c;
-      this.coords[3 * i + 2] = q[i].d;
-    }
-    this.length = q.length;
-  }
-
-  get(off: number): Quat {
-    return new Quat(
-      0,
-      this.coords[3 * off],
-      this.coords[3 * off + 1],
-      this.coords[3 * off + 2],
-    );
-  }
-
-  centermass(): Quat {
-    let sx = 0;
-    let sy = 0;
-    let sz = 0;
-    for (let i = 0; i < this.length; i++) {
-      sx += this.coords[3 * i];
-      sy += this.coords[3 * i + 1];
-      sz += this.coords[3 * i + 2];
-    }
-    return new Quat(0, sx / this.length, sy / this.length, sz / this.length);
-  }
-
-  rotate(q: Quat): Face {
-    const a = [];
-    for (let i = 0; i < this.length; i++) {
-      a.push(this.get(i).rotatepoint(q));
-    }
-    return new Face(a);
-  }
-
-  rotateforward(): Face {
-    const a = [];
-    for (let i = 1; i < this.length; i++) {
-      a.push(this.get(i));
-    }
-    a.push(this.get(0));
-    return new Face(a);
-  }
-}
-
-export class FaceTree {
-  constructor(
-    private face: Quat[],
-    private left?: FaceTree,
-    private right?: FaceTree,
-  ) {}
-
-  public split(q: Quat): FaceTree {
-    const t = q.cutface(this.face);
-    if (t !== null) {
-      if (this.left === undefined) {
-        this.left = new FaceTree(t[0]);
-        this.right = new FaceTree(t[1]);
-      } else {
-        this.left = this.left?.split(q);
-        this.right = this.right?.split(q);
-      }
-    }
-    return this;
-  }
-
-  public collect(arr: Face[], leftfirst: boolean): Face[] {
-    if (this.left === undefined) {
-      arr.push(new Face(this.face));
-    } else if (leftfirst) {
-      this.left?.collect(arr, false);
-      this.right?.collect(arr, true);
-    } else {
-      this.right?.collect(arr, false);
-      this.left?.collect(arr, true);
-    }
-    return arr;
-  }
-}
 
 function makeplane(f: Quat[]): Quat {
   // turn three points into a plane.
   const a = f[1].sub(f[0]);
   const b = f[2].sub(f[0]);
-  const c = a.cross(b);
-  c.a = -f[0].dot(c);
+  const c = a.cross(b).normalizeplane();
+  c.a = f[0].dot(c);
+  if (c.a < -eps) {
+    console.log("A plane was deeper than deep");
+  }
   return c;
 }
 
@@ -169,6 +86,114 @@ function splitcubieset(cubieset: Quat[][][], plane: Quat): Quat[][][] {
   return r;
 }
 
+function centermasscubie(cubie: Quat[][]): Quat {
+  let s = new Quat(0, 0, 0, 0);
+  for (const face of cubie) {
+    s = s.sum(centermassface(face));
+  }
+  return s.smul(1/cubie.length);
+}
+
+class Jumbler {
+  public curstop: number[];
+  public cubieshapes: [Quat, Quat[][]][] = [];
+  constructor(public cubieset: Quat[][][], public cuts: Quat[], public stops: number[]) {
+    this.curstop = Array(cuts.length).fill(0);
+    for (const cubie of cubieset) {
+      this.cubieshapes.push([centermasscubie(cubie), cubie]);
+    }
+  }
+
+  public canoncubie(cubie: Quat[][]): number {
+    const cm = centermasscubie(cubie);
+    for (let i=0; i<this.cubieshapes.length; i++) {
+      let ok = true;
+      if (cm.dist(this.cubieshapes[i][0]) < eps) {
+        for (let j=0; j<cubie.length; j++) {
+          let foundface = false;
+          const cmf = centermassface(cubie[j]);
+          for (const f2 of this.cubieshapes[i][1]) {
+            if (centermassface(f2).dist(cmf) < eps) {
+              foundface = true;
+              break;
+            }
+          }
+          if (!foundface) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) {
+          return i;
+        }
+      }
+    }
+    this.cubieshapes.push([cm, cubie]);
+    return this.cubieshapes.length - 1;
+  }
+
+  public unblocked(): number[] {
+    const r: number[] = [];
+    for (let i=0; i<this.cuts.length; i++) {
+      const plane = this.cuts[i];
+      const d = plane.a;
+      let ok = true;
+      for (let j=0; ok && j<this.cubieset.length; j++) {
+        let seensides = 0;
+        for (let k=0; ok && k<this.cubieset[j].length; k++) {
+          for (let m=0; m<this.cubieset[j][k].length; m++) {
+            seensides |= 1 << (plane.side(this.cubieset[j][k][m].dot(plane) - d) + 1);
+            if ((seensides & 5) == 5) {
+              ok = false;
+              break;
+            }
+          }
+        }
+      }
+      if (ok) {
+        r.push(i);
+      }
+    }
+    return r;
+  }
+
+  public move(grip: number, stop: number): void {
+    const ang = (this.stops[stop] - this.stops[this.curstop[grip]]) * 0.5;
+    const plane = this.cuts[grip];
+    const d = plane.a;
+    const s = Math.sin(ang);
+    const rot = new Quat(Math.cos(ang), plane.b * s, plane.c * s, plane.d * s);
+    for (let j=0; j<this.cubieset.length; j++) {
+      let side = 0;
+      for (let k=0; side===0 && k<this.cubieset[j].length; k++) {
+        for (let m=0; m<this.cubieset[j][k].length; m++) {
+          side = plane.side(this.cubieset[j][k][m].dot(plane) - d);
+          if (side != 0) {
+            break;
+          }
+        }
+      }
+      if (side === 1) {
+        const nc: Quat[][] = [];
+        for (let k=0; k<this.cubieset[j].length; k++) {
+          nc.push(rot.rotateface(this.cubieset[j][k]));
+        }
+        this.cubieset[j] = nc;
+      }
+    }
+    this.curstop[grip] = stop;
+  }
+
+  public getshape(): number[] {
+    const r: number[] = [];
+    for (const cubie of this.cubieset) {
+      r.push(this.canoncubie(cubie));
+    }
+    r.sort();
+    return r;
+  }
+}
+
 export function makeJumblePrism() {
   const h = Math.sqrt(3) / 3;
   const p = [
@@ -182,15 +207,15 @@ export function makeJumblePrism() {
   const cubie = [
     [p[0], p[1], p[2]],
     [p[3], p[4], p[5]],
-    [p[0], p[1], p[3], p[4]],
-    [p[1], p[2], p[4], p[5]],
-    [p[2], p[0], p[5], p[3]],
+    [p[0], p[1], p[4], p[3]],
+    [p[1], p[2], p[5], p[4]],
+    [p[2], p[0], p[3], p[5]],
   ];
   let cubieset = [cubie];
   const cuts = [
-    makeplane([p[0], p[4], p[5]]),
-    makeplane([p[1], p[5], p[3]]),
-    makeplane([p[2], p[3], p[4]]),
+    makeplane([p[0], p[5], p[4]]),
+    makeplane([p[1], p[3], p[5]]),
+    makeplane([p[2], p[4], p[3]]),
     makeplane([p[3], p[1], p[2]]),
     makeplane([p[4], p[2], p[0]]),
     makeplane([p[5], p[0], p[1]]),
@@ -198,6 +223,43 @@ export function makeJumblePrism() {
   for (const cut of cuts) {
     cubieset = splitcubieset(cubieset, cut);
   }
-  console.log(cubieset.length);
+  const stops = [0, Math.acos(1/8), Math.acos(-3/4), -Math.acos(-3/4), -Math.acos(1/8)];
+  const ju = new Jumbler(cubieset, cuts, stops);
+  console.log(stops);
+  const seen: {[key: string]: number} = {};
+  console.log(ju.cubieset);
+  let lastgrip = -1;
+  for (let t=0; t<8800000; t++) {
+    const unblocked = ju.unblocked();
+    if (unblocked.length > 1) {
+      seen[ju.getshape().join(" ")] = 1;
+    }
+    if (unblocked.length == 0) {
+      console.log("Failed to do move correctly");
+      break;
+    }
+    let g = unblocked[Math.floor(Math.random() * unblocked.length)];
+    while (g === lastgrip && unblocked.length > 1) {
+      g = unblocked[Math.floor(Math.random() * unblocked.length)];
+    }
+    const off = 1 + Math.floor(Math.random() * 4);
+    const stop = (ju.curstop[g] + off) % 5;
+    ju.move(g, stop);
+    lastgrip = g;
+    if ((t & (t - 1)) == 0) {
+      const len = Object.keys(seen).length;
+      console.log("At " + t + " length is " + len + " " + ju.cubieshapes.length);
+    }
+  }
+/*
+  for (let i=0; i<ju.cuts.length; i++) {
+    for (let j=1; j<ju.stops.length; j++) {
+      ju.move(i, j);
+      console.log(ju.getshape());
+    }
+    ju.move(i, 0);
+    console.log(ju.getshape());
+  }
+  */
 }
 export const JP = makeJumblePrism();

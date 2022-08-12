@@ -291,9 +291,6 @@ export class Quat {
    public splitface(face: Quat[]): Quat[][] {
     const d = this.a;
     const rp: Quat[] = [];
-    for (let i = 0; i < face.length; i++) {
-      this.side(face[i].dot(this) - d) + 1;
-    }
     const r = [];
     // saw both sides
     const inout = face.map((_: Quat) => this.side(_.dot(this) - d));
