@@ -1,6 +1,7 @@
 import { centermassface, Quat } from "./Quat";
-const eps = 1e-9;
-
+const eps = 1e-8;
+const moveseq: number[] = [];
+const movenames = ["UF", "UR", "FR", "FL", "UB", "UL", "DB", "DL", "BL", "BR", "DF", "DR"];
 function makeplane(f: Quat[]): Quat {
   // turn three points into a plane.
   const a = f[1].sub(f[0]);
@@ -129,6 +130,11 @@ class Jumbler {
       }
     }
     this.cubieshapes.push([cm, cubie]);
+    let moves = "";
+    for (let i=0; i<moveseq.length; i += 3) {
+      moves = moves + " " + movenames[moveseq[i]] + " " + moveseq[i+1] + " " + moveseq[i+2];
+    }
+    console.log("New shape at " + moves);
     return this.cubieshapes.length - 1;
   }
 
@@ -224,33 +230,119 @@ export function makeJumblePrism() {
     cubieset = splitcubieset(cubieset, cut);
   }
   const stops = [0, Math.acos(1/8), Math.acos(-3/4), -Math.acos(-3/4), -Math.acos(1/8)];
-  const ju = new Jumbler(cubieset, cuts, stops);
   console.log(stops);
-  const seen: {[key: string]: number} = {};
-  console.log(ju.cubieset);
-  let lastgrip = -1;
-  for (let t=0; t<8800000; t++) {
-    const unblocked = ju.unblocked();
-    if (unblocked.length > 1) {
-      seen[ju.getshape().join(" ")] = 1;
-    }
-    if (unblocked.length == 0) {
-      console.log("Failed to do move correctly");
-      break;
-    }
-    let g = unblocked[Math.floor(Math.random() * unblocked.length)];
-    while (g === lastgrip && unblocked.length > 1) {
-      g = unblocked[Math.floor(Math.random() * unblocked.length)];
-    }
-    const off = 1 + Math.floor(Math.random() * 4);
-    const stop = (ju.curstop[g] + off) % 5;
-    ju.move(g, stop);
-    lastgrip = g;
-    if ((t & (t - 1)) == 0) {
-      const len = Object.keys(seen).length;
-      console.log("At " + t + " length is " + len + " " + ju.cubieshapes.length);
+  const ju = new Jumbler(cubieset, cuts, stops);
+  return ju;
+}
+
+export function makeHelicopter() {
+  const p = [
+    new Quat(0, 1, 1, 1),
+    new Quat(0, 1, 1, -1),
+    new Quat(0, 1, -1, 1),
+    new Quat(0, 1, -1, -1),
+    new Quat(0, -1, 1, 1),
+    new Quat(0, -1, 1, -1),
+    new Quat(0, -1, -1, 1),
+    new Quat(0, -1, -1, -1),
+    new Quat(0, 0, 1, 1), // 8: FR
+    new Quat(0, 0, 1, -1), // 9: FL
+    new Quat(0, 0, -1, 1), // 10: BR
+    new Quat(0, 0, -1, -1), // 11: BL
+    new Quat(0, 1, 0, 1), // 12: UR
+    new Quat(0, 1, 0, -1), // 13: UL
+    new Quat(0, -1, 0, 1), // 14: DR
+    new Quat(0, -1, 0, -1), // 15: DL
+    new Quat(0, 1, 1, 0), // 16: UF
+    new Quat(0, 1, -1, 0), // 17: UB
+    new Quat(0, -1, 1, 0), // 18: DF
+    new Quat(0, -1, -1, 0), // 19: DB
+  ];
+  const cubie = [
+    [p[0], p[1], p[3], p[2]],
+    [p[4], p[5], p[7], p[6]],
+    [p[0], p[1], p[5], p[4]],
+    [p[2], p[3], p[7], p[6]],
+    [p[0], p[2], p[6], p[4]],
+    [p[1], p[3], p[7], p[5]],
+  ];
+  let cubieset = [cubie];
+  const cuts = [
+    makeplane([p[12], p[9], p[8]]), // UF
+    makeplane([p[17], p[16], p[8]]), // UR
+    makeplane([p[12], p[16], p[18]]), // FR
+    makeplane([p[18], p[16], p[13]]), // FL
+    makeplane([p[13], p[12], p[10]]), // UB
+    makeplane([p[16], p[17], p[11]]), // UL
+    makeplane([p[15], p[11], p[10]]), // DB
+    makeplane([p[18], p[11], p[19]]), // DL
+    makeplane([p[15], p[17], p[19]]), // BL
+    makeplane([p[17], p[14], p[19]]), // BR
+    makeplane([p[14], p[9], p[15]]), // DF
+    makeplane([p[19], p[8], p[18]]), // DR
+  ];
+  for (const cut of cuts) {
+    cubieset = splitcubieset(cubieset, cut);
+  }
+  const ncubieset = [];
+  for (const c of cubieset) {
+    if (c.length != 5 && c.length != 12) {
+      ncubieset.push(c);
     }
   }
+  cubieset = ncubieset;
+  const h = Math.sqrt(2/3);
+  const stops = [0, 2*Math.acos(h), Math.acos(-1)-2*Math.acos(h), Math.acos(-1), Math.acos(-1)+2*Math.acos(h), -2*Math.acos(h)];
+  console.log(stops);
+  const ju = new Jumbler(cubieset, cuts, stops);
+  return ju;
+}
+
+let globald = 0;
+
+export function play(ju: Jumbler) {
+  const seen: {[key: string]: number} = {};
+  console.log(ju.cubieset);
+  for (let d=0; d<100; d++) {
+    globald = d;
+    const t = performance.now();
+    recur(d, ju, seen, -1);
+    const len = Object.keys(seen).length;
+    console.log("At " + d + " length is " + len + " " + ju.cubieshapes.length + " in " + (performance.now()-t));
+  }
+}
+function recur(togo: number, ju: Jumbler, seen: {[key: string]: number}, last: number) {
+  const sh = ju.getshape().join(" ");
+  if (togo == 0) {
+    if (!seen[sh]) {
+      seen[sh] = (globald + 1) * 1001;
+    }
+    return;
+  }
+  if (seen[sh] !== (globald * 1000) + (globald - togo + 1)) {
+    return;
+  }
+  seen[sh] = ((globald + 1) * 1000 + (globald - togo + 1));
+  const unblocked = ju.unblocked();
+  for (const m of unblocked) {
+    if (m === last) {
+      continue;
+    }
+    const ostop = ju.curstop[m];
+    for (let tw=0; tw<6; tw++) {
+      if (ostop == tw) {
+        continue;
+      }
+      ju.move(m, tw);
+      moveseq.push(m, ostop, tw);
+      recur(togo-1, ju, seen, m);
+      moveseq.pop();
+      moveseq.pop();
+      moveseq.pop();
+    }
+    ju.move(m, ostop);
+  }
+}
 /*
   for (let i=0; i<ju.cuts.length; i++) {
     for (let j=1; j<ju.stops.length; j++) {
@@ -261,5 +353,4 @@ export function makeJumblePrism() {
     console.log(ju.getshape());
   }
   */
-}
-export const JP = makeJumblePrism();
+export const JP = play(makeHelicopter());
