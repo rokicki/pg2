@@ -98,10 +98,14 @@ function centermasscubie(cubie: Quat[][]): Quat {
 class Jumbler {
   public curstop: number[];
   public cubieshapes: [Quat, Quat[][]][] = [];
-  constructor(public cubieset: Quat[][][], public cuts: Quat[], public stops: number[]) {
+  public cubieid: number[] = [];
+  public movecache: {[key: string]: number[]} = {};
+  public blockcache: number[][] = [];
+  constructor(cubieset: Quat[][][], public cuts: Quat[], public stops: number[]) {
     this.curstop = Array(cuts.length).fill(0);
     for (const cubie of cubieset) {
       this.cubieshapes.push([centermasscubie(cubie), cubie]);
+      this.cubieid.push(this.cubieid.length);
     }
   }
 
@@ -139,24 +143,41 @@ class Jumbler {
   }
 
   public unblocked(): number[] {
-    const r: number[] = [];
-    for (let i=0; i<this.cuts.length; i++) {
-      const plane = this.cuts[i];
-      const d = plane.a;
-      let ok = true;
-      for (let j=0; ok && j<this.cubieset.length; j++) {
-        let seensides = 0;
-        for (let k=0; ok && k<this.cubieset[j].length; k++) {
-          for (let m=0; m<this.cubieset[j][k].length; m++) {
-            seensides |= 1 << (plane.side(this.cubieset[j][k][m].dot(plane) - d) + 1);
-            if ((seensides & 5) == 5) {
-              ok = false;
-              break;
+    const b = new Array(this.cuts.length);
+    for (let i=0; i<b.length; i++) {
+      b[i] = false;
+    }
+    for (const cid of this.cubieid) {
+      if (this.blockcache[cid] === undefined) {
+        const cubie = this.cubieshapes[cid][1];
+        const r: number[] = [];
+        for (let i=0; i<this.cuts.length; i++) {
+          const plane = this.cuts[i];
+          const d = plane.a;
+          let ok = true;
+          let seensides = 0;
+          for (let k=0; ok && k<cubie.length; k++) {
+            for (let m=0; m<cubie[k].length; m++) {
+              seensides |= 1 << (plane.side(cubie[k][m].dot(plane) - d) + 1);
+              if ((seensides & 5) == 5) {
+                ok = false;
+                break;
+              }
             }
           }
+          if (!ok) {
+            r.push(i);
+          }
         }
+        this.blockcache[cid] = r;
       }
-      if (ok) {
+      for (const cut of this.blockcache[cid]) {
+        b[cut] = true;
+      }
+    }
+    const r: number[] = [];
+    for (let i=0; i<b.length; i++) {
+      if (!b[i]) {
         r.push(i);
       }
     }
@@ -169,31 +190,43 @@ class Jumbler {
     const d = plane.a;
     const s = Math.sin(ang);
     const rot = new Quat(Math.cos(ang), plane.b * s, plane.c * s, plane.d * s);
-    for (let j=0; j<this.cubieset.length; j++) {
-      let side = 0;
-      for (let k=0; side===0 && k<this.cubieset[j].length; k++) {
-        for (let m=0; m<this.cubieset[j][k].length; m++) {
-          side = plane.side(this.cubieset[j][k][m].dot(plane) - d);
-          if (side != 0) {
-            break;
+    const key = "" + grip + " " + this.curstop[grip] + " " + stop;
+    if (this.movecache[key] === undefined) {
+      this.movecache[key] = [];
+    }
+    const mc = this.movecache[key];
+    for (let j=0; j<this.cubieid.length; j++) {
+      const cid = this.cubieid[j];
+      if (mc[cid] === undefined) {
+        const cubie = this.cubieshapes[this.cubieid[j]][1];
+        let side = 0;
+        for (let k=0; side===0 && k<cubie.length; k++) {
+          for (let m=0; m<cubie[k].length; m++) {
+            side = plane.side(cubie[k][m].dot(plane) - d);
+            if (side != 0) {
+              break;
+            }
           }
         }
-      }
-      if (side === 1) {
-        const nc: Quat[][] = [];
-        for (let k=0; k<this.cubieset[j].length; k++) {
-          nc.push(rot.rotateface(this.cubieset[j][k]));
+        if (side === 1) {
+          const nc: Quat[][] = [];
+          for (let k=0; k<cubie.length; k++) {
+            nc.push(rot.rotateface(cubie[k]));
+          }
+          mc[cid] = this.canoncubie(nc);
+        } else {
+          mc[cid] = cid;
         }
-        this.cubieset[j] = nc;
       }
+      this.cubieid[j] = mc[cid];
     }
     this.curstop[grip] = stop;
   }
 
   public getshape(): number[] {
-    const r: number[] = [];
-    for (const cubie of this.cubieset) {
-      r.push(this.canoncubie(cubie));
+    const r: number[] = [] ;
+    for (const i of this.cubieid) {
+      r.push(i);
     }
     r.sort();
     return r;
@@ -301,7 +334,6 @@ let globald = 0;
 
 export function play(ju: Jumbler) {
   const seen: {[key: string]: number} = {};
-  console.log(ju.cubieset);
   for (let d=0; d<100; d++) {
     globald = d;
     const t = performance.now();
