@@ -290,9 +290,8 @@ export function makeHelicopter() {
       ncubieset.push(c);
     }
   }
-  cubieset = ncubieset;
-  const h = Math.sqrt(2/3);
-  const stops = [0, 2*Math.acos(h), Math.acos(-1)-2*Math.acos(h), Math.acos(-1), Math.acos(-1)+2*Math.acos(h), -2*Math.acos(h)];
+  // cubieset = ncubieset;
+  const stops = [0, Math.acos(1/3), Math.acos(-1/3), Math.acos(-1), -Math.acos(-1/3), -Math.acos(1/3)];
   console.log(stops);
   const ju = new Jumbler(cubieset, cuts, stops);
   return ju;
