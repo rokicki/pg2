@@ -1,7 +1,16 @@
 import { centermassface, Quat } from "./Quat";
-const eps = 1e-8;
+const eps = 1e-13;
 const moveseq: number[] = [];
 const movenames = ["UF", "UR", "FR", "FL", "UB", "UL", "DB", "DL", "BL", "BR", "DF", "DR"];
+
+function showmoves(): string {
+  let moves = "";
+  for (let i=0; i<moveseq.length; i += 3) {
+    moves = moves + " " + movenames[moveseq[i]] + " " + moveseq[i+1] + " " + moveseq[i+2];
+  }
+  return moves;
+}
+
 function makeplane(f: Quat[]): Quat {
   // turn three points into a plane.
   const a = f[1].sub(f[0]);
@@ -119,8 +128,25 @@ class Jumbler {
           const cmf = centermassface(cubie[j]);
           for (const f2 of this.cubieshapes[i][1]) {
             if (centermassface(f2).dist(cmf) < eps) {
-              foundface = true;
-              break;
+              // candidate face, but might be twisted; check points
+              let bad = false;
+              for (const p1 of cubie[j]) {
+                let foundpoint = false;
+                for (const p2 of f2) {
+                  if (p1.dist(p2) < eps) {
+                    foundpoint = true;
+                    break;
+                  }
+                }
+                if (!foundpoint) {
+                  bad = true;
+                  break;
+                }
+              }
+              if (!bad) {
+                foundface = true;
+                break;
+              }
             }
           }
           if (!foundface) {
@@ -134,11 +160,6 @@ class Jumbler {
       }
     }
     this.cubieshapes.push([cm, cubie]);
-    let moves = "";
-    for (let i=0; i<moveseq.length; i += 3) {
-      moves = moves + " " + movenames[moveseq[i]] + " " + moveseq[i+1] + " " + moveseq[i+2];
-    }
-    console.log("New shape at " + moves);
     return this.cubieshapes.length - 1;
   }
 
@@ -195,6 +216,7 @@ class Jumbler {
       this.movecache[key] = [];
     }
     const mc = this.movecache[key];
+    // let moving = 0;
     for (let j=0; j<this.cubieid.length; j++) {
       const cid = this.cubieid[j];
       if (mc[cid] === undefined) {
@@ -218,8 +240,15 @@ class Jumbler {
           mc[cid] = cid;
         }
       }
+      /*
+      if (this.cubieid[j] !== mc[cid]) {
+        moving++;
+        console.log("M " + this.cubieid[j] + " -> " + mc[cid]);
+      }
+      */
       this.cubieid[j] = mc[cid];
     }
+//    console.log("Moved " + moving);
     this.curstop[grip] = stop;
   }
 
@@ -228,7 +257,7 @@ class Jumbler {
     for (const i of this.cubieid) {
       r.push(i);
     }
-    r.sort();
+    r.sort((a,b) => a-b);
     return r;
   }
 }
@@ -323,7 +352,7 @@ export function makeHelicopter() {
       ncubieset.push(c);
     }
   }
-  // cubieset = ncubieset;
+  cubieset = ncubieset;
   const stops = [0, Math.acos(1/3), Math.acos(-1/3), Math.acos(-1), -Math.acos(-1/3), -Math.acos(1/3)];
   console.log(stops);
   const ju = new Jumbler(cubieset, cuts, stops);
@@ -334,7 +363,7 @@ let globald = 0;
 
 export function play(ju: Jumbler) {
   const seen: {[key: string]: number} = {};
-  for (let d=0; d<100; d++) {
+  for (let d=0; d<=30; d++) {
     globald = d;
     const t = performance.now();
     recur(d, ju, seen, -1);
@@ -345,6 +374,7 @@ export function play(ju: Jumbler) {
 function recur(togo: number, ju: Jumbler, seen: {[key: string]: number}, last: number) {
   const sh = ju.getshape().join(" ");
   if (togo == 0) {
+//    console.log(showmoves() + " -> " + sh);
     if (!seen[sh]) {
       seen[sh] = (globald + 1) * 1001;
     }
