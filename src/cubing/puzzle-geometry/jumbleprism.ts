@@ -1,6 +1,7 @@
 import { centermassface, Quat } from "./Quat";
-const eps = 1e-13;
+const eps = 1e-9;
 const moveseq: number[] = [];
+const statestack: string[] = [];
 const movenames = ["UF", "UR", "FR", "FL", "UB", "UL", "DB", "DL", "BL", "BR", "DF", "DR"];
 
 function showmoves(): string {
@@ -352,9 +353,8 @@ export function makeHelicopter() {
       ncubieset.push(c);
     }
   }
-  cubieset = ncubieset;
-  const stops = [0, Math.acos(1/3), Math.acos(-1/3), Math.acos(-1), -Math.acos(-1/3), -Math.acos(1/3)];
-  console.log(stops);
+  // cubieset = ncubieset;
+  const stops = [0, -Math.acos(1/3), -Math.acos(-1/3), Math.acos(-1), Math.acos(-1/3), Math.acos(1/3)];
   const ju = new Jumbler(cubieset, cuts, stops);
   return ju;
 }
@@ -371,24 +371,36 @@ export function play(ju: Jumbler) {
     console.log("At " + d + " length is " + len + " " + ju.cubieshapes.length + " in " + (performance.now()-t));
   }
 }
+let statenum: {[key: string]: number} = {};
+let statecnt = 0;
 function recur(togo: number, ju: Jumbler, seen: {[key: string]: number}, last: number) {
-  const sh = ju.getshape().join(" ");
+  const sha = ju.getshape();
+  const sh = sha.join(" ");
+  statestack.push(sh);
   if (togo == 0) {
 //    console.log(showmoves() + " -> " + sh);
     if (!seen[sh]) {
+      statenum[sh] = statecnt++;
       seen[sh] = (globald + 1) * 1001;
     }
+    if (statestack.length > 1) {
+//      console.log("A " + statenum[statestack[statestack.length-2]] + " , " + movenames[moveseq[moveseq.length-3]] + " " + moveseq[moveseq.length-2] + " " + moveseq[moveseq.length-1] + " , " + statenum[sh]);
+    }
+    statestack.pop();
     return;
   }
   if (seen[sh] !== (globald * 1000) + (globald - togo + 1)) {
+    statestack.pop();
     return;
   }
   seen[sh] = ((globald + 1) * 1000 + (globald - togo + 1));
   const unblocked = ju.unblocked();
   for (const m of unblocked) {
+    /*
     if (m === last) {
       continue;
     }
+    */
     const ostop = ju.curstop[m];
     for (let tw=0; tw<6; tw++) {
       if (ostop == tw) {
@@ -403,6 +415,7 @@ function recur(togo: number, ju: Jumbler, seen: {[key: string]: number}, last: n
     }
     ju.move(m, ostop);
   }
+  statestack.pop();
 }
 /*
   for (let i=0; i<ju.cuts.length; i++) {
