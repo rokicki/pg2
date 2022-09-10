@@ -4,6 +4,7 @@ const moveseq: number[] = [];
 const statestack: string[] = [];
 const movenames = ["UF", "UR", "FR", "FL", "UB", "UL", "DB", "DL", "BL", "BR", "DF", "DR"];
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function showmoves(): string {
   let moves = "";
   for (let i=0; i<moveseq.length; i += 3) {
@@ -107,6 +108,7 @@ function centermasscubie(cubie: Quat[][]): Quat {
 
 class Jumbler {
   public curstop: number[];
+  public points: Quat[] = [];
   public cubieshapes: [Quat, Quat[][]][] = [];
   public cubieid: number[] = [];
   public movecache: {[key: string]: number[]} = {};
@@ -117,6 +119,37 @@ class Jumbler {
       this.cubieshapes.push([centermasscubie(cubie), cubie]);
       this.cubieid.push(this.cubieid.length);
     }
+  }
+
+  public canonpt(p: Quat): number {
+    for (let i=0; i<this.points.length; i++) {
+      if (p.dist(this.points[i]) < eps) {
+        return i;
+      }
+    }
+    this.points.push(p);
+    return this.points.length-1;
+  }
+
+  public allshapes(): {[key: string]: any} {
+    const r: {[key: string]: any} = {};
+    r['vertices'] = [];
+    r['cubies'] = [];
+    for (const cubie of this.cubieshapes) {
+      const c = [];
+      for (let j=0; j<cubie[1].length; j++) {
+        for (let k=2; k<cubie[1][j].length; k++) {
+          c.push([this.canonpt(cubie[1][j][0]),
+                  this.canonpt(cubie[1][j][1]),
+                  this.canonpt(cubie[1][j][k])]);
+        }
+      }
+      r['cubies'].push(c);
+    }
+    for (const p of this.points) {
+      r['vertices'].push([p.b, p.c, p.d]);
+    }
+    return r;
   }
 
   public canoncubie(cubie: Quat[][]): number {
@@ -370,6 +403,8 @@ export function play(ju: Jumbler) {
     const len = Object.keys(seen).length;
     console.log("At " + d + " length is " + len + " " + ju.cubieshapes.length + " in " + (performance.now()-t));
   }
+  console.log(JSON.stringify(ju.allshapes(), undefined, 2));
+  // now, emit the geometry data.
 }
 let statenum: {[key: string]: number} = {};
 let statecnt = 0;
