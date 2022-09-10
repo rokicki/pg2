@@ -75,11 +75,11 @@ function splitcubie(cubie: Quat[][], plane: Quat, r: Quat[][][]): void {
         cpts2.push(sp[1]);
     }
     if (cpts2[1].sub(cpts2[0]).cross(cpts2[2].sub(cpts2[0])).dot(plane) < 0) {
-        c1.push(cpts2);
-        c2.push(cpts2.slice().reverse());
-      } else {
         c2.push(cpts2);
         c1.push(cpts2.slice().reverse());
+      } else {
+        c1.push(cpts2);
+        c2.push(cpts2.slice().reverse());
       }
   }
   if (c1.length) {
@@ -355,11 +355,11 @@ export function makeHelicopter() {
     new Quat(0, -1, -1, 0), // 19: DB
   ];
   const cubie = [
-    [p[0], p[1], p[3], p[2]],
+    [p[0], p[2], p[3], p[1]],
     [p[4], p[5], p[7], p[6]],
     [p[0], p[1], p[5], p[4]],
-    [p[2], p[3], p[7], p[6]],
-    [p[0], p[2], p[6], p[4]],
+    [p[2], p[6], p[7], p[3]],
+    [p[0], p[4], p[6], p[2]],
     [p[1], p[3], p[7], p[5]],
   ];
   let cubieset = [cubie];
@@ -393,6 +393,7 @@ export function makeHelicopter() {
 }
 
 let globald = 0;
+let lastpos: number[] = [];
 
 export function play(ju: Jumbler) {
   const seen: {[key: string]: number} = {};
@@ -403,11 +404,21 @@ export function play(ju: Jumbler) {
     const len = Object.keys(seen).length;
     console.log("At " + d + " length is " + len + " " + ju.cubieshapes.length + " in " + (performance.now()-t));
   }
-  console.log(JSON.stringify(ju.allshapes(), undefined, 2));
+//  console.log(JSON.stringify(ju.allshapes(), undefined, 2));
+  const as = ju.allshapes();
+  const faces = [];
+  for (const cid of lastpos) {
+    for (const fac of as['cubies'][cid]) {
+      faces.push(fac);
+    }
+  }
+  const obj = {'vertex': as['vertices'], 'face': faces};
+  console.log(JSON.stringify(obj, undefined, 2));
   // now, emit the geometry data.
 }
-let statenum: {[key: string]: number} = {};
+const statenum: {[key: string]: number} = {};
 let statecnt = 0;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function recur(togo: number, ju: Jumbler, seen: {[key: string]: number}, last: number) {
   const sha = ju.getshape();
   const sh = sha.join(" ");
@@ -417,6 +428,8 @@ function recur(togo: number, ju: Jumbler, seen: {[key: string]: number}, last: n
     if (!seen[sh]) {
       statenum[sh] = statecnt++;
       seen[sh] = (globald + 1) * 1001;
+//      console.log("N " + (statecnt-1) + showmoves());
+      lastpos = sha;
     }
     if (statestack.length > 1) {
 //      console.log("A " + statenum[statestack[statestack.length-2]] + " , " + movenames[moveseq[moveseq.length-3]] + " " + moveseq[moveseq.length-2] + " " + moveseq[moveseq.length-1] + " , " + statenum[sh]);
